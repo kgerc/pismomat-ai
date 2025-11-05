@@ -1,1 +1,7 @@
 project_id = "pqmhtdqhamockhphfhmr"
+
+[functions.generate-document]
+verify_jwt = false
+
+[functions.search-grants]
+verify_jwt = false

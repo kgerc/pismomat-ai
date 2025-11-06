@@ -12,10 +12,10 @@ serve(async (req) => {
 
   try {
     const { documentType, name, address, details } = await req.json();
-    const HUGGING_FACE_TOKEN = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
-    if (!HUGGING_FACE_TOKEN) {
-      throw new Error('HUGGING_FACE_ACCESS_TOKEN is not configured');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY is not configured');
     }
 
     console.log('Generating document for type:', documentType);
@@ -140,45 +140,41 @@ Uzasadnienie: ${details || 'Szczegóły dotyczące sytuacji życiowej/zdrowotnej
 
     const prompt = documentPrompts[documentType] || documentPrompts.gmina;
 
-    // Wywołanie Hugging Face API z modelem dla polskiego języka
+    // Wywołanie Lovable AI z modelem Gemini dla polskiego języka
     const response = await fetch(
-      "https://router.huggingface.co/hf-inference/models/sdadas/polish-gpt2-large",
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${HUGGING_FACE_TOKEN}`,
+          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 800,
-            temperature: 0.7,
-            top_p: 0.9,
-            do_sample: true,
-            return_full_text: false,
-          },
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: "Jesteś ekspertem w tworzeniu formalnych pism urzędowych w Polsce. Generuj profesjonalne, zgodne z przepisami dokumenty w języku polskim."
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
         }),
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Hugging Face API error:', response.status, errorText);
-      throw new Error(`Hugging Face API error: ${response.status}`);
+      console.error('Lovable AI error:', response.status, errorText);
+      throw new Error(`AI API error: ${response.status}`);
     }
 
     const result = await response.json();
     console.log('Document generated successfully');
 
-    let generatedText = "";
-    if (Array.isArray(result) && result[0]?.generated_text) {
-      generatedText = result[0].generated_text;
-    } else if (result.generated_text) {
-      generatedText = result.generated_text;
-    } else {
-      generatedText = prompt; // Fallback do promptu jeśli model nie zwróci odpowiedzi
-    }
+    const generatedText = result.choices?.[0]?.message?.content || prompt;
 
     // Dodanie daty i miejsca
     const today = new Date().toLocaleDateString('pl-PL');

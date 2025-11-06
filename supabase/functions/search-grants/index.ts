@@ -12,76 +12,141 @@ serve(async (req) => {
 
   try {
     const { query } = await req.json();
-    const HUGGING_FACE_TOKEN = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN');
+    const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY');
 
-    if (!HUGGING_FACE_TOKEN) {
-      throw new Error('HUGGING_FACE_ACCESS_TOKEN is not configured');
+    if (!FIRECRAWL_API_KEY) {
+      throw new Error('FIRECRAWL_API_KEY is not configured');
     }
 
     console.log('Searching grants for query:', query);
 
-    // Przykładowa baza dotacji (w produkcji można rozszerzyć o prawdziwe API lub bazę danych)
-    const grantsDatabase = [
-      {
-        title: "Dotacja na rozpoczęcie działalności gospodarczej",
-        description: "Wsparcie finansowe dla osób rozpoczynających własną działalność gospodarczą. Maksymalna kwota to 6-krotność przeciętnego wynagrodzenia.",
-        amount: "do 40 000 PLN",
-        deadline: "Nabór ciągły",
-        url: "https://www.gov.pl/web/rodzina/dotacje-na-start",
-        tags: ["biznes", "startup", "przedsiębiorczość"],
-      },
-      {
-        title: "Dofinansowanie na modernizację gospodarstwa rolnego",
-        description: "Program wsparcia dla rolników indywidualnych na rozwój i modernizację gospodarstw.",
-        amount: "do 300 000 PLN",
-        deadline: "31.12.2025",
-        url: "https://www.arimr.gov.pl",
-        tags: ["rolnictwo", "modernizacja", "ARiMR"],
-      },
-      {
-        title: "Fundusze europejskie dla organizacji pozarządowych",
-        description: "Wsparcie projektów społecznych realizowanych przez NGO. Priorytet: edukacja, kultura, integracja społeczna.",
-        amount: "do 500 000 PLN",
-        deadline: "30.06.2025",
-        url: "https://www.funduszeeuropejskie.gov.pl",
-        tags: ["NGO", "projekty społeczne", "UE"],
-      },
-      {
-        title: "Dotacja na zakup sprzętu IT dla firm",
-        description: "Program cyfryzacji przedsiębiorstw - dofinansowanie zakupu komputerów, oprogramowania i infrastruktury IT.",
-        amount: "do 100 000 PLN",
-        deadline: "15.09.2025",
-        url: "https://www.gov.pl/web/cyfryzacja",
-        tags: ["IT", "cyfryzacja", "technologia"],
-      },
-      {
-        title: "Wsparcie dla innowacyjnych start-upów",
-        description: "Program akceleracyjny dla innowacyjnych projektów technologicznych. Finansowanie, mentoring i networking.",
-        amount: "do 1 000 000 PLN",
-        deadline: "Nabór kwartalny",
-        url: "https://parp.gov.pl",
-        tags: ["innowacje", "technologia", "startup"],
-      },
-      {
-        title: "Dotacja na odnawialne źródła energii",
-        description: "Program 'Mój Prąd' - dofinansowanie zakupu i montażu instalacji fotowoltaicznych dla gospodarstw domowych.",
-        amount: "do 7 000 PLN",
-        deadline: "30.11.2025",
-        url: "https://mojprad.gov.pl",
-        tags: ["OZE", "fotowoltaika", "ekologia"],
-      },
+    // Crawl official Polish grant websites
+    const grantSources = [
+      'https://www.gov.pl/web/fundusze-regiony',
+      'https://www.funduszeeuropejskie.gov.pl/strony/o-funduszach/zasady-dzialania-funduszy/fundusze-europejskie-2021-2027',
+      'https://parp.gov.pl',
     ];
 
-    // Proste filtrowanie - w produkcji można użyć AI do lepszego dopasowania
-    const queryLower = query.toLowerCase();
-    const matchedGrants = grantsDatabase.filter(grant => {
-      const searchableText = `${grant.title} ${grant.description} ${grant.tags.join(' ')}`.toLowerCase();
-      return searchableText.includes(queryLower) || 
-             grant.tags.some(tag => queryLower.includes(tag.toLowerCase()));
+    const crawlPromises = grantSources.map(async (url) => {
+      try {
+        const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url,
+            formats: ['markdown'],
+            onlyMainContent: true,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(`Failed to crawl ${url}:`, response.status);
+          return null;
+        }
+
+        const data = await response.json();
+        return {
+          url,
+          content: data.markdown || data.content || '',
+        };
+      } catch (error) {
+        console.error(`Error crawling ${url}:`, error);
+        return null;
+      }
     });
 
-    // Jeśli brak bezpośrednich dopasowań, zwróć wszystkie
-    const grants = matchedGrants.length > 0 ? matchedGrants : grantsDatabase.slice(0, 3);
+    const crawlResults = (await Promise.all(crawlPromises)).filter((r) => r !== null);
+    console.log(`Crawled ${crawlResults.length} sources successfully`);
+
+    // Combine all crawled content
+    const combinedContent = crawlResults.map((r) => `Source: ${r.url}\n${r.content}`).join('\n\n---\n\n');
+
+    // Use AI to extract and match grants from the crawled content
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY is not configured');
+    }
+
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `Jesteś asystentem specjalizującym się w analizie informacji o dotacjach i funduszach w Polsce. 
+Twoim zadaniem jest wydobycie z podanych tekstów wszystkich dostępnych informacji o dotacjach, które pasują do zapytania użytkownika.
+Zwróć wyniki w formacie JSON zawierającym tablicę obiektów z polami: title, description, amount, deadline, url, tags.
+Jeśli nie ma wystarczających informacji, zwróć puste pole lub "Brak danych". URL powinien być linkiem do źródła informacji.`,
+          },
+          {
+            role: 'user',
+            content: `Zapytanie użytkownika: "${query}"\n\nPrzeanalizuj poniższe treści i wydobądź informacje o dotacjach pasujących do zapytania:\n\n${combinedContent.slice(0, 15000)}`,
+          },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'extract_grants',
+              description: 'Zwraca listę dopasowanych dotacji z treści',
+              parameters: {
+                type: 'object',
+                properties: {
+                  grants: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        title: { type: 'string' },
+                        description: { type: 'string' },
+                        amount: { type: 'string' },
+                        deadline: { type: 'string' },
+                        url: { type: 'string' },
+                        tags: { type: 'array', items: { type: 'string' } },
+                      },
+                      required: ['title', 'description', 'amount', 'deadline', 'url', 'tags'],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ['grants'],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: 'function', function: { name: 'extract_grants' } },
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('AI API error:', aiResponse.status, errorText);
+      throw new Error(`AI API error: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    console.log('AI response received');
+
+    let grants = [];
+    try {
+      const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+      if (toolCall?.function?.arguments) {
+        const parsed = JSON.parse(toolCall.function.arguments);
+        grants = parsed.grants || [];
+      }
+    } catch (parseError) {
+      console.error('Error parsing AI response:', parseError);
+      grants = [];
+    }
 
     console.log(`Found ${grants.length} grants matching query`);
 

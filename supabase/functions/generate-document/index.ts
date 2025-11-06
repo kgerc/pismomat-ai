@@ -89,13 +89,60 @@ Rodzaj działalności: ${details || 'Do uzupełnienia'}`,
 Imię i nazwisko: ${name}
 Adres: ${address}
 Rodzaj koncesji: ${details || 'Do uzupełnienia'}`,
+
+      odwolanie: `Wygeneruj odwołanie od decyzji administracyjnej. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Szczegóły decyzji: ${details || 'Sygnatura sprawy i data decyzji'}
+
+Uwzględnij podstawę prawną, zarzuty i wniosek o uchylenie/zmianę decyzji.`,
+
+      skarga: `Wygeneruj skargę do organu administracji publicznej. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Przedmiot skargi: ${details || 'Opis naruszenia/zaniedbania'}
+
+Zachowaj formalny ton, podstawy prawne i wniosek końcowy.`,
+
+      informacja_publiczna: `Wygeneruj wniosek o dostęp do informacji publicznej. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Zakres informacji: ${details || 'Dokładny opis żądanej informacji'}
+
+Zawrzyj podstawy z ustawy o dostępie do informacji publicznej.`,
+
+      reklamacja_uslugi: `Wygeneruj reklamację usługi. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Opis nieprawidłowości: ${details || 'Opis wady/usługi niewykonanej'}
+
+Uwzględnij roszczenie: naprawa, wymiana, obniżenie ceny lub odstąpienie.`,
+
+      wniosek_500plus: `Wygeneruj wniosek o świadczenie 500+. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Dzieci: ${details || 'Imiona, PESEL i daty urodzenia dzieci'}
+
+Zachowaj aktualne wymogi formalne.`,
+
+      umorzenie_odsetek: `Wygeneruj wniosek o umorzenie odsetek od zaległości. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Uzasadnienie: ${details || 'Szczegółowe uzasadnienie trudnej sytuacji'}
+
+Powołaj się na ważny interes podatnika i interes publiczny.`,
+
+      odroczenie_kary: `Wygeneruj wniosek o odroczenie wykonania kary. Dane:
+Imię i nazwisko: ${name}
+Adres: ${address}
+Uzasadnienie: ${details || 'Szczegóły dotyczące sytuacji życiowej/zdrowotnej'}`,
     };
 
     const prompt = documentPrompts[documentType] || documentPrompts.gmina;
 
     // Wywołanie Hugging Face API z modelem dla polskiego języka
     const response = await fetch(
-      "https://api-inference.huggingface.co/models/sdadas/polish-gpt2-large",
+      "https://router.huggingface.co/hf-inference/models/sdadas/polish-gpt2-large",
       {
         method: "POST",
         headers: {

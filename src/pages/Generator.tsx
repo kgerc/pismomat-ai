@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, Download, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import jsPDF from "jspdf";
 
 const documentTypes = [
   { value: "mandat", label: "Wniosek o umorzenie mandatu" },
@@ -18,6 +19,13 @@ const documentTypes = [
   { value: "dowod", label: "Wniosek o wydanie dowodu osobistego" },
   { value: "ewidencja", label: "Wniosek o wpis do ewidencji działalności" },
   { value: "koncesja", label: "Wniosek o koncesję" },
+  { value: "odwolanie", label: "Odwołanie od decyzji administracyjnej" },
+  { value: "skarga", label: "Skarga do organu administracji" },
+  { value: "informacja_publiczna", label: "Wniosek o informację publiczną" },
+  { value: "reklamacja_uslugi", label: "Reklamacja usługi" },
+  { value: "wniosek_500plus", label: "Wniosek o świadczenie 500+" },
+  { value: "umorzenie_odsetek", label: "Wniosek o umorzenie odsetek" },
+  { value: "odroczenie_kary", label: "Wniosek o odroczenie wykonania kary" },
 ];
 
 const Generator = () => {
@@ -69,16 +77,19 @@ const Generator = () => {
     }
   };
 
-  const handleDownload = () => {
-    const blob = new Blob([generatedText], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `dokument-${documentType}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const maxLineWidth = pageWidth - 2 * margin;
+    
+    const lines = doc.splitTextToSize(generatedText, maxLineWidth);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(lines, margin, 20);
+    
+    doc.save(`dokument-${documentType}.pdf`);
   };
 
   return (
@@ -168,9 +179,9 @@ const Generator = () => {
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Wygenerowany dokument</h3>
               {generatedText && (
-                <Button onClick={handleDownload} variant="outline" size="sm">
+                <Button onClick={handleDownloadPDF} variant="outline" size="sm">
                   <Download />
-                  Pobierz
+                  Pobierz PDF
                 </Button>
               )}
             </div>

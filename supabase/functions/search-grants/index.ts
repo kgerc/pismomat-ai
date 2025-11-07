@@ -1,9 +1,124 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { parse } from "https://deno.land/x/xml@2.1.3/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+interface Grant {
+  title: string;
+  description: string;
+  amount: string;
+  deadline: string;
+  url: string;
+  tags: string[];
+  category?: string;
+  maxAmount?: string;
+  eligibility?: string;
+}
+
+async function fetchParpRss(): Promise<Grant[]> {
+  try {
+    console.log('Fetching PARP RSS feed...');
+    const response = await fetch('https://www.parp.gov.pl/rss/nabory');
+    if (!response.ok) return [];
+    
+    const xmlText = await response.text();
+    const doc: any = parse(xmlText);
+    const grants: Grant[] = [];
+    
+    // Parse RSS items
+    const items = doc?.rss?.channel?.item || [];
+    const itemArray = Array.isArray(items) ? items : [items];
+    
+    for (const item of itemArray) {
+      if (!item) continue;
+      grants.push({
+        title: item.title || 'Brak tytułu',
+        description: item.description || '',
+        amount: 'Sprawdź w ogłoszeniu',
+        deadline: item.pubDate || 'Brak danych',
+        url: item.link || 'https://www.parp.gov.pl',
+        tags: ['PARP', 'Przedsiębiorstwa'],
+        category: 'Mikro, małe i średnie przedsiębiorstwa',
+        eligibility: 'Przedsiębiorcy'
+      });
+    }
+    
+    console.log(`Fetched ${grants.length} grants from PARP RSS`);
+    return grants;
+  } catch (error) {
+    console.error('Error fetching PARP RSS:', error);
+    return [];
+  }
+}
+
+async function fetchDaneGovPl(): Promise<Grant[]> {
+  try {
+    console.log('Fetching from dane.gov.pl API...');
+    // Search for grant-related datasets
+    const searchResponse = await fetch('https://api.dane.gov.pl/1.4/datasets?q=dotacje&per_page=20');
+    if (!searchResponse.ok) return [];
+    
+    const searchData = await searchResponse.json();
+    const grants: Grant[] = [];
+    
+    // Process found datasets
+    for (const dataset of searchData.data || []) {
+      if (!dataset.attributes) continue;
+      
+      grants.push({
+        title: dataset.attributes.title || 'Brak tytułu',
+        description: dataset.attributes.notes || 'Brak opisu',
+        amount: 'Sprawdź szczegóły',
+        deadline: 'Sprawdź szczegóły',
+        url: `https://dane.gov.pl/pl/dataset/${dataset.id}`,
+        tags: dataset.attributes.tags?.map((t: any) => t.display_name) || ['Dane publiczne'],
+        category: 'Rozwój regionalny',
+        eligibility: 'Sprawdź w danych'
+      });
+    }
+    
+    console.log(`Fetched ${grants.length} grants from dane.gov.pl`);
+    return grants;
+  } catch (error) {
+    console.error('Error fetching dane.gov.pl:', error);
+    return [];
+  }
+}
+
+async function fetchNaszeAuto(): Promise<Grant[]> {
+  try {
+    console.log('Fetching from naszeauto.gov.pl...');
+    const response = await fetch('https://naszeauto.gov.pl/');
+    if (!response.ok) return [];
+    
+    const html = await response.text();
+    
+    // Basic extraction from HTML
+    const grants: Grant[] = [];
+    if (html.includes('dotacja') || html.includes('dofinansowanie')) {
+      grants.push({
+        title: 'Program Dopłat do Samochodów Elektrycznych i Wodorowych',
+        description: 'Dopłaty do zakupu nowych samochodów zeroemisyjnych dla osób fizycznych, firm i samorządów',
+        amount: 'Do 40 000 zł',
+        deadline: 'Sprawdź na stronie programu',
+        url: 'https://naszeauto.gov.pl/',
+        tags: ['Transport', 'Elektromobilność', 'Ekologia'],
+        category: 'Transport i Ekologia',
+        maxAmount: '40 000 zł',
+        eligibility: 'Osoby fizyczne, przedsiębiorcy, JST'
+      });
+    }
+    
+    console.log(`Fetched ${grants.length} grants from naszeauto.gov.pl`);
+    return grants;
+  } catch (error) {
+    console.error('Error fetching naszeauto.gov.pl:', error);
+    return [];
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -12,64 +127,23 @@ serve(async (req) => {
 
   try {
     const { query } = await req.json();
-    const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY');
-
-    if (!FIRECRAWL_API_KEY) {
-      throw new Error('FIRECRAWL_API_KEY is not configured');
-    }
-
     console.log('Searching grants for query:', query);
 
-    // Crawl official Polish grant websites - expanded sources
-    const grantSources = [
-      'https://www.gov.pl/web/fundusze-regiony',
-      'https://www.funduszeeuropejskie.gov.pl/strony/o-funduszach/zasady-dzialania-funduszy/fundusze-europejskie-2021-2027',
-      'https://www.funduszeeuropejskie.gov.pl/wyszukiwarka/mikro-male-i-srednie-przedsiebiorstwa/#/3756=Mikro,%20ma%C5%82e%20i%20%C5%9Brednie%20przedsi%C4%99biorstwa',
-      'https://parp.gov.pl',
-      'https://naszeauto.gov.pl/',
-      'https://www.gov.pl/web/arimr/agencja-restrukturyzacji-i-modernizacji-rolnictwa',
-      'https://serwis-uslugirozwojowe.parp.gov.pl/component/site/site/dofinansowania-bur/',
-      'https://mapadotacji.gov.pl/',
-      'https://www.gov.pl/web/gov/dotacje-i-dofinansowania',
-      'https://www.gov.pl/web/kowr',
-    ];
+    // Fetch from multiple API sources in parallel
+    const [parpGrants, daneGovGrants, naszeAutoGrants] = await Promise.all([
+      fetchParpRss(),
+      fetchDaneGovPl(),
+      fetchNaszeAuto()
+    ]);
 
-    const crawlPromises = grantSources.map(async (url) => {
-      try {
-        const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            url,
-            formats: ['markdown'],
-            onlyMainContent: true,
-          }),
-        });
+    // Combine all grants
+    const allGrants = [...parpGrants, ...daneGovGrants, ...naszeAutoGrants];
+    console.log(`Total grants fetched: ${allGrants.length}`);
 
-        if (!response.ok) {
-          console.error(`Failed to crawl ${url}:`, response.status);
-          return null;
-        }
-
-        const data = await response.json();
-        return {
-          url,
-          content: data.markdown || data.content || '',
-        };
-      } catch (error) {
-        console.error(`Error crawling ${url}:`, error);
-        return null;
-      }
-    });
-
-    const crawlResults = (await Promise.all(crawlPromises)).filter((r) => r !== null);
-    console.log(`Crawled ${crawlResults.length} sources successfully`);
-
-    // Combine all crawled content
-    const combinedContent = crawlResults.map((r) => `Source: ${r.url}\n${r.content}`).join('\n\n---\n\n');
+    // Prepare content for AI matching
+    const combinedContent = allGrants.map((g, i) => 
+      `Grant ${i + 1}:\nTitle: ${g.title}\nDescription: ${g.description}\nCategory: ${g.category || 'Brak'}\nTags: ${g.tags.join(', ')}\nURL: ${g.url}`
+    ).join('\n\n---\n\n');
 
     // Use AI to extract and match grants from the crawled content
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
